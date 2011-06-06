@@ -33,4 +33,6 @@
 <string name="DetectForm">Analyzing photo...</string>
 <string name="DetectFormFailed">Failed to detect form. Please retake the photo.</string>
 <string name="VerifyForm">Form detected in file %s. Please check the green rectangle below and retake the photo if the green rectangle does not closely match with the outline of the form paper.</string>
+<string name="mScan">mScan</string>
+<string name="mScanIntro">Welcome to mScan</string>
 </resources>
