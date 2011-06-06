@@ -38,6 +38,7 @@
 		<activity android:name="AfterPhotoTaken"
 			android:screenOrientation="portrait" android:label="@string/after_photo_taken_activity">
 		</activity>
+		<activity android:name="MScan"></activity>
 	</application>
 
 	<uses-feature android:glEsVersion="0x00020000"

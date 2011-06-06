@@ -1,5 +1,7 @@
 package com.bubblebot;
 
+import com.bubblebot.jni.Processor;
+
 import android.app.Activity;
 import android.content.Context;
 import android.graphics.Bitmap;
@@ -13,6 +15,7 @@ public class MScan extends Activity {
 	
 	private LayoutInflater inflater;
 	private static int count = 1;
+	private final Processor processor = new Processor();
 	
 	// Initialize the application
 	@Override
@@ -33,11 +36,12 @@ public class MScan extends Activity {
        image.setOnClickListener(new View.OnClickListener() {
 			@Override
 			public void onClick(View v) {
-				String filename = "VR_segment";
 				if (count == 7) {
 					count = 1;
 				}
-				Bitmap bm = BitmapFactory.decodeFile(dir + filename + count++ + ".jpg");
+				String filename = dir + "VR_segment" + count++ + ".jpg";
+				processor.processSegment(filename, "segment", 10, 10, 100, 100);
+				Bitmap bm = BitmapFactory.decodeFile(filename);
 				image.setImageBitmap(bm);
 			}
        });

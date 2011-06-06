@@ -60,7 +60,7 @@ public class BubbleBot extends Activity {
        // Hook up handler for mScan button
        Button mScan = (Button) findViewById(R.id.mScan);
        mScan.setOnClickListener(new View.OnClickListener() {
-           public void onClick(View v) {
+    	   public void onClick(View v) {
         	Intent intent = new Intent(getApplication(), MScan.class);
    			startActivity(intent); 
            }

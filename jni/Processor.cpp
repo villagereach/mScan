@@ -437,3 +437,38 @@ void Processor::warpImage(IplImage* img, IplImage* warpImg,
 	cvSetImageROI(warpImg, rect);
 	cvReleaseMat(&map);
 }
+
+/**
+ * Accepts an image file and the coordinates and size of a segment within the image.
+ * This draws a rectangle representing the segment on the original image and creates
+ * a new image file of the cropped segment.
+ * filename - Absolute location of the original image file.
+ * segment - Name of the segment being processed. This name will be used when
+ *     creating output files for each segment.
+ * x - x-coordinate of the segment's top left corner
+ * y - y-coordinate of the segment's top left corner
+ * width - the width of the segment
+ * height - the height of the segment
+ */
+void Processor::processSegment(char* filename, char* segment, int x, int y, int width, int height) {
+    string image_filename = string(filename);
+    string segment_name = string(segment);
+
+    Point2f top_left = Point2f(x, y); 
+    Point2f bottom_right = Point2f(x + width, y + height);
+
+    // Create the color used for highlighting segments.
+    Scalar color = Scalar(0, 255, 0); 
+
+    Mat in = imread(image_filename);
+
+    // Draw a rectangle around the segment.
+    rectangle(in, top_left, bottom_right, color, 1, 8, 0); 
+
+    // Crop the segment
+    Mat cropped_segment = in(Rect(x, y, width, height));
+
+    // Write both images to file.
+    imwrite(image_filename + "_highlighted.jpg", in);
+    imwrite(image_filename + "_" + segment_name + ".jpg", cropped_segment);
+}
