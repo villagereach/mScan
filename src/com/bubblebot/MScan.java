@@ -1,7 +1,5 @@
 package com.bubblebot;
 
-import com.bubblebot.jni.Processor;
-
 import android.app.Activity;
 import android.content.Context;
 import android.graphics.Bitmap;
@@ -10,6 +8,9 @@ import android.os.Bundle;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.widget.ImageView;
+import android.widget.TextView;
+
+import com.bubblebot.jni.Processor;
 
 public class MScan extends Activity {
 	
@@ -40,7 +41,11 @@ public class MScan extends Activity {
 					count = 1;
 				}
 				String filename = dir + "VR_segment" + count++ + ".jpg";
-				processor.processSegment(filename, "segment", 10, 10, 100, 100);
+				int result = processor.processImage("image_file", "bubbe_file", 0.0);
+				
+				TextView text = (TextView) findViewById(R.id.text);
+				text.setText("process image result: " + result);
+				
 				Bitmap bm = BitmapFactory.decodeFile(filename);
 				image.setImageBitmap(bm);
 			}

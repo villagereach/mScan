@@ -64,4 +64,12 @@ public class Processor {
     return (cPtr == 0) ? null : new SWIGTYPE_p_CvPoint(cPtr, false);
   }
 
+  public void processSegment(String filename, String segment, int x, int y, int width, int height) {
+    bubblebotJNI.Processor_processSegment(swigCPtr, this, filename, segment, x, y, width, height);
+  }
+
+  public int processImage(String imagefile, String bubblefile, float weight) {
+    return bubblebotJNI.Processor_processImage(swigCPtr, this, imagefile, bubblefile, weight);
+  }
+
 }
