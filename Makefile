@@ -53,7 +53,10 @@ BUILD_DEFS=OPENCV_CONFIG=$(OPENCV_CONFIG) \
 # The real native library stripped of symbols
 LIB = libs/armeabi-v7a/$(LIBNAME) libs/armeabi/$(LIBNAME)
 
-all:	$(LIB)
+all: mscan $(LIB)
+
+mscan: ./jni/ImageProcessing.cc
+		g++ -g -o suite ./jni/ImageProcessing.cc `pkg-config opencv --cflags --libs`
 
 #calls the ndk-build script, passing it OPENCV_ROOT and OPENCV_LIBS_DIR
 $(LIB): $(SWIG_C_OUT) $(SOURCES) $(HEADERS) $(ANDROID_MKS)

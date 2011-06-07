@@ -1,4 +1,5 @@
 #include "Processor.h"
+#include "ImageProcessing.h"
 #include <sys/stat.h>
 #include "log.h"
 #include <string>
@@ -471,4 +472,14 @@ void Processor::processSegment(char* filename, char* segment, int x, int y, int 
     // Write both images to file.
     imwrite(image_filename + "_highlighted.jpg", in);
     imwrite(image_filename + "_" + segment_name + ".jpg", cropped_segment);
+}
+
+/**
+ * Function wrapper that calls the mScan ImageProcessing library.
+ * imagefile - The absolute filepath of the image.
+ * bubblefile - the absolute filepath of the bubble coordinates.
+ * weight - unknown
+ */
+int process_image(char* imagefile, char* bubblefile, float weight) {
+   return 42; 
 }
