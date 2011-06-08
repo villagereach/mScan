@@ -41,13 +41,15 @@ public class MScan extends Activity {
 					count = 1;
 				}
 				String filename = dir + "VR_segment" + count++ + ".jpg";
-				int result = processor.processImage("image_file", "bubbe_file", 0.0);
+				float f = 0.5f;
+				int result = processor.processImage("/mnt/sdcard/external_sd/form.jpg",
+						"/mnt/sdcard/external_sd/form.jpg", f);
 				
 				TextView text = (TextView) findViewById(R.id.text);
 				text.setText("process image result: " + result);
 				
-				Bitmap bm = BitmapFactory.decodeFile(filename);
-				image.setImageBitmap(bm);
+				//Bitmap bm = BitmapFactory.decodeFile(filename);
+				//image.setImageBitmap(bm);
 			}
        });
 

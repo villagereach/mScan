@@ -21,7 +21,7 @@ public:
   std::vector<cv::Point> findBubbles(IplImage* pImage);
   CvPoint * findLineValues(IplImage* img);
   void processSegment(char* filename, char* segment, int x, int y, int width, int height);
-  int processImage(char* imagefile, char* bubblefile, float weight);
+  int processImage(char* image, char* bubblelist, float weight);
   
 private:
 };

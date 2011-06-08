@@ -1,6 +1,6 @@
-#include "cv.h"
-#include "cxcore.h"
-#include "highgui.h"
+//#include "cv.h"
+//#include "cxcore.h"
+//#include "highgui.h"
 #include "ImageProcessing.h"
 #include <string>
 #include <iostream>
@@ -27,11 +27,27 @@ void configCornerArray(vector<Point2f>& corners, Point2f* corners_a);
 void straightenImage(const Mat& input_image, Mat& output_image);
 bubble_val checkBubble(Mat& det_img_gray, Point2f& bubble_location);
 
+
+ImageProcessor::ImageProcessor() {
+}
+
+ImageProcessor::~ImageProcessor() {
+}
+
 int main(int argc, char* argv[]) {
     return 0;
 }
 
-vector<bubble_val> ProcessImage(string &imagefilename, string &bubblefilename, float &weight) {
+//vector<bubble_val> ProcessImage(char* image, char* bubblelist, float weight) {
+//int ProcessImage(char* image, char* bubblelist, float weight) {
+int ImageProcessor::mscan() {
+  //string imagefilename(image);
+  //string bubblefilename(bubblelist);
+
+  string imagefilename;
+  string bubblefilename;
+  float weight;
+
   cout << "debug level is: " << DEBUG << endl;
   weight_param = weight;
   vector < Point2f > corners, bubbles;
@@ -56,7 +72,8 @@ vector<bubble_val> ProcessImage(string &imagefilename, string &bubblefilename, f
   // Read the input image
   img = imread(imagefilename);
   if (img.data == NULL) {
-    return vector<bubble_val>();
+    //return vector<bubble_val>();
+    return 50;
   }
 
   #if DEBUG > 0
@@ -91,7 +108,8 @@ vector<bubble_val> ProcessImage(string &imagefilename, string &bubblefilename, f
   imwrite("withbubbles_" + imagefilename, straightened_image);
   #endif
 
-  return bubble_vals;
+  //return bubble_vals;
+  return 60;
 }
 
 void straightenImage(const Mat& input_image, Mat& output_image) {

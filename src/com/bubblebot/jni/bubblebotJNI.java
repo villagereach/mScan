@@ -48,4 +48,6 @@ class bubblebotJNI {
   public final static native void Processor_warpImage(long jarg1, Processor jarg1_, long jarg2, long jarg3, long jarg4);
   public final static native long Processor_findBubbles(long jarg1, Processor jarg1_, long jarg2);
   public final static native long Processor_findLineValues(long jarg1, Processor jarg1_, long jarg2);
+  public final static native void Processor_processSegment(long jarg1, Processor jarg1_, String jarg2, String jarg3, int jarg4, int jarg5, int jarg6, int jarg7);
+  public final static native int Processor_processImage(long jarg1, Processor jarg1_, String jarg2, String jarg3, float jarg4);
 }
