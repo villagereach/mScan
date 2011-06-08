@@ -445,140 +445,339 @@ void Processor::warpImage(IplImage* img, IplImage* warpImg,
 	cvReleaseMat(&map);
 }
 
-/**
- * Accepts an image file and the coordinates and size of a segment within the image.
- * This draws a rectangle representing the segment on the original image and creates
- * a new image file of the cropped segment.
- * filename - Absolute location of the original image file.
- * segment - Name of the segment being processed. This name will be used when
- *     creating output files for each segment.
- * x - x-coordinate of the segment's top left corner
- * y - y-coordinate of the segment's top left corner
- * width - the width of the segment
- * height - the height of the segment
+/*
+ * processing constants
  */
-void Processor::processSegment(char* filename, char* segment, int x, int y, int width, int height) {
-    string image_filename = string(filename);
-    string segment_name = string(segment);
+#define DILATION 6
+#define BLOCK_SIZE 3
+#define DIST_PARAM 500
 
-    Point2f top_left = Point2f(x, y); 
-    Point2f bottom_right = Point2f(x + width, y + height);
+#define EXAMPLE_WIDTH 26
+#define EXAMPLE_HEIGHT 32
 
-    // Create the color used for highlighting segments.
-    Scalar color = Scalar(0, 255, 0); 
+// how wide is the segment in pixels
+#define SEGMENT_WIDTH 144
 
-    Mat in = imread(image_filename);
+// how tall is the segment in pixels
+#define SEGMENT_HEIGHT 200
 
-    // Draw a rectangle around the segment.
-    rectangle(in, top_left, bottom_right, color, 1, 8, 0); 
+// buffer around segment in pixels
+#define SEGMENT_BUFFER 70
 
-    // Crop the segment
-    Mat cropped_segment = in(Rect(x, y, width, height));
-
-    // Write both images to file.
-    imwrite(image_filename + "_highlighted.jpg", in);
-    imwrite(image_filename + "_" + segment_name + ".jpg", cropped_segment);
-}
+#define EIGENBUBBLES 5
 
 enum bubble_val { EMPTY_BUBBLE, FILLED_BUBBLE, FALSE_POSITIVE };
-
-#define SCALE .5f
 
 Mat comparison_vectors;
 PCA my_PCA;
 vector <bubble_val> training_bubble_values;
 vector <Point2f> training_bubbles_locations;
 float weight_param;
+string imgfilename;
+Point search_window(10, 10);
 
 void configCornerArray(vector<Point2f>& corners, Point2f* corners_a);
 void straightenImage(const Mat& input_image, Mat& output_image);
-bubble_val checkBubble(Mat& det_img_gray, Point2f& bubble_location);
+double rateBubble(Mat& det_img_gray, Point bubble_location);
+bubble_val checkBubble(Mat& det_img_gray, Point bubble_location);
+void getSegmentLocations(vector<Point2f> &segmentcorners, string segfile);
+vector<bubble_val> processSegment(Mat &segment, string bubble_offsets);
+Mat getSegmentMat(Mat &img, Point2f &corner);
+void find_bounding_lines(Mat& img, int* upper, int* lower, bool vertical);
+void align_segment(Mat& img, Mat& aligned_segment);
 
-/**
- * Function wrapper that calls the mScan ImageProcessing library.
- * imagefile - The absolute filepath of the image.
- * bubblefile - the absolute filepath of the bubble coordinates.
- * weight - unknown
- */
-int Processor::processImage(char* imagefile, char* bubblesfile, float weight) {
-	LOGI("Beginning to process image.");
-  //string imagefilename(image);
-  //string bubblefilename(bubblelist);
-
-  string imagefilename(imagefile);
-  string bubblefilename(bubblesfile);
-
-  cout << "debug level is: " << DEBUG << endl;
-  weight_param = weight;
-  vector < Point2f > corners, bubbles;
-  vector<bubble_val> bubble_vals;
-  Mat img, imgGrey, out, warped;
-  string line;
-  float bubx, buby;
-  int bubble;
-
-  LOGI("READING BUBBLES");
-  // read the bubble location file for bubble locations
-  ifstream bubblefile(bubblefilename.c_str());
-  if (bubblefile.is_open()) {
-    while (getline(bubblefile, line)) {
-      stringstream ss(line);
-      ss >> bubx;
-      ss >> buby;
-      Point2f bubble(bubx * SCALE, buby * SCALE);
-      bubbles.push_back(bubble);
-    }
+template <class Tp>
+void configCornerArray(vector<Tp>& orig_corners, Point2f* corners_a, float expand) {
+  float min_dist;
+  int min_idx;
+  float dist;
+  
+  vector<Point2f> corners;
+  
+  for(int i = 0; i < orig_corners.size(); i++ ){
+    corners.push_back(Point2f(float(orig_corners[i].x), float(orig_corners[i].y)));
   }
+  //Make sure the form corners map to the correct image corner
+  //by snaping the nearest form corner to each image corner.
+  for(int i = 0; i < 4; i++) {
+    min_dist = FLT_MAX;
+    for(int j = 0; j < corners.size(); j++ ){
+      dist = norm(corners[j]-corners_a[i]);
+      if(dist < min_dist){
+        min_dist = dist;
+        min_idx = j;
+      }
+    }
+    corners_a[i]=corners[min_idx] + expand * (corners_a[i] - corners[min_idx]);
+    //Two relatively minor reasons for doing this,
+    //1. Small efficiency gain
+    //2. If 2 corners share a closest point this resolves the conflict.
+    corners.erase(corners.begin()+min_idx);
+  }
+}
 
-  LOGI("done reading bubbles");
+int Processor::processImage(char* image_file_name, char* bubble_file_name,
+    float weight) {
+
+  string imagefilename(image_file_name);
+  string bubblefilename(bubble_file_name);
+
+  #if DEBUG > 0
+  cout << "debug level is: " << DEBUG << endl;
+  #endif
+  string seglocfile("segment-offsets-tmp.txt");
+  string buboffsetfile("bubble-offsets.txt");
+  weight_param = weight;
+  vector < Point2f > corners, segment_locations;
+  vector<bubble_val> bubble_vals;
+  vector<Mat> segmats;
+  vector<vector<bubble_val> > segment_results;
+  Mat img, imgGrey, out, warped;
+  imgfilename = imagefilename;
 
   // Read the input image
   img = imread(imagefilename);
   if (img.data == NULL) {
-    //return vector<bubble_val>();
+    // return vector<vector<bubble_val> >();
     return 0;
   }
 
   #if DEBUG > 0
-  LOGI("BUBBLEBOT converting to grayscale");
+  cout << "converting to grayscale" << endl;
   #endif
   cvtColor(img, imgGrey, CV_RGB2GRAY);
 
-  Mat straightened_image(3300 * SCALE, 2550 * SCALE, CV_16U);
+  Mat straightened_image(3300, 2550, CV_16U);
 
   #if DEBUG > 0
-  LOGI("BUBBLEBOT straightening image");
+  cout << "straightening image" << endl;
   #endif
   straightenImage(imgGrey, straightened_image);
   
   #if DEBUG > 0
-  LOGI("BUBBLEBOT writing to output image");
-  imwrite("/mnt/sdcard/external_sd/straightened_" + imagefilename, straightened_image);
+  cout << "writing to output image" << endl;
+  imwrite("straightened_" + imagefilename, straightened_image);
   #endif
   
   #if DEBUG > 0
-  LOGI("BUBBLEBOT checking bubbles");
+  cout << "getting segment locations" << endl;
   #endif
-  vector<Point2f>::iterator it;
-  for (it = bubbles.begin(); it != bubbles.end(); it++) {
-    Scalar color(0, 0, 0);
-    LOGI("BUBBLEBOT in for loop. checking one bubble.");
-    bubble_val current_bubble = checkBubble(straightened_image, *it);
-    bubble_vals.push_back(current_bubble);
-    rectangle(straightened_image, (*it)-Point2f(7,9), (*it)+Point2f(7,9), color);
+  getSegmentLocations(segment_locations, seglocfile);
+
+  #if DEBUG > 0
+  cout << "grabbing individual segment images" << endl;
+  #endif
+  for (vector<Point2f>::iterator it = segment_locations.begin();
+       it != segment_locations.end(); it++) {
+    segmats.push_back(getSegmentMat(straightened_image, *it));
   }
 
   #if DEBUG > 0
-  imwrite("withbubbles_" + imagefilename, straightened_image);
+  cout << "processing all segments" << endl;
+  #endif
+  for (vector<Mat>::iterator it = segmats.begin(); it != segmats.end(); it++) {
+    //wouldn't be a bad idea memory wise to merge this loop with the above loop
+    Mat aligned_segment((*it).rows - SEGMENT_BUFFER, (*it).cols - SEGMENT_BUFFER, CV_8UC1);
+
+    align_segment(*it, aligned_segment);
+    segment_results.push_back(processSegment(aligned_segment, buboffsetfile));
+    aligned_segment.copyTo(*it);
+  }
+
+  #if DEBUG > 0
+  cout << "writing segment images" << endl;
+  for (int i = 0; i < segmats.size(); i++) {
+    #if DEBUG > 1
+    cout << "writing segment " << i << endl;
+    #endif
+    string segfilename("marked_");
+    segfilename.push_back((char)i+33);
+    segfilename.append(".jpg");
+    imwrite(segfilename, segmats[i]);
+  }
   #endif
 
-  //return bubble_vals;
+  //return segment_results;
   return 1;
+}
+
+void align_segment(Mat& img, Mat& aligned_segment){
+  vector < vector<Point> > contours;
+  vector < vector<Point> > borderContours;
+  vector < Point > approx;
+  vector < Point > maxRect;
+
+  //Threshold the image
+  //Maybe we should dilate or blur or something first?
+  //The ideal image would be black lines and white boxes with nothing in them
+  //so if we can filter to get something closer to that, it is a good thing.
+  Scalar my_mean;
+  Scalar my_stddev;
+  meanStdDev(img, my_mean, my_stddev);
+  Mat imgThresh = img > (my_mean.val[0]-.05*my_stddev.val[0]);
+
+  // Find all external contours of the image
+  findContours(imgThresh, contours, CV_RETR_EXTERNAL, CV_CHAIN_APPROX_SIMPLE);
+
+  float maxContourArea = 0;
+  // Iterate through all detected contours
+  for (size_t i = 0; i < contours.size(); ++i) {
+    // reduce the number of points in the contour
+    approxPolyDP(Mat(contours[i]), approx,
+                     arcLength(Mat(contours[i]), true) * 0.1, true);
+
+    float area = fabs(contourArea(Mat(approx)));
+
+    if (area > maxContourArea) {
+      maxRect = approx;
+            maxContourArea = area;
+        }
+        //Maybe I could refine this by using a corner detector and using
+        //the 4 contour points with the highest responce?
+    }
+    if ( maxRect.size() == 4 && isContourConvex(Mat(maxRect)) && maxContourArea > (img.cols/2) * (img.rows/2)) {
+        Point2f segment_corners[4] = {Point2f(0,0),Point2f(aligned_segment.cols,0),
+            Point2f(0,aligned_segment.rows),Point2f(aligned_segment.cols,aligned_segment.rows)};
+        Point2f corners_a[4] = {Point2f(0,0),Point2f(img.cols,0),
+            Point2f(0,img.rows),Point2f(img.cols,img.rows)};
+
+        configCornerArray(maxRect, corners_a, .1);
+        Mat H = getPerspectiveTransform(corners_a , segment_corners);
+        warpPerspective(img, aligned_segment, H, aligned_segment.size());
+    }
+    else{//use the bounding line method if the contour method fails
+        int top = 0, bottom = 0, left = 0, right = 0;
+        find_bounding_lines(img, &top, &bottom, false);
+        find_bounding_lines(img, &left, &right, true);
+        
+        //debug stuff
+        /*
+        img.copyTo(aligned_segment);
+        const Point* p = &maxRect[0];
+        int n = (int) maxRect.size();
+        polylines(aligned_segment, &p, &n, 1, true, 200, 2, CV_AA);
+        
+        img.row(top)+=200;
+        img.row(bottom)+=200;
+        img.col(left)+=200;
+        img.col(right)+=200;
+        img.copyTo(aligned_segment);
+        */
+
+        float bounding_lines_threshold = .2;
+        if ((abs((bottom - top) - aligned_segment.rows) < bounding_lines_threshold * aligned_segment.rows) &&
+            (abs((right - left) - aligned_segment.cols) < bounding_lines_threshold * aligned_segment.cols) &&
+            top + aligned_segment.rows < img.rows &&  top + aligned_segment.cols < img.cols) {
+            
+            img(Rect(left, top, aligned_segment.cols, aligned_segment.rows)).copyTo(aligned_segment);
+            
+        }
+        else{
+            img(Rect(SEGMENT_BUFFER, SEGMENT_BUFFER, aligned_segment.cols, aligned_segment.rows)).copyTo(aligned_segment);
+        }
+    }
+}
+
+vector<bubble_val> processSegment(Mat &segment, string bubble_offsets) {
+  vector<Point2f> bubble_locations;
+  vector<bubble_val> retvals;
+  string line;
+  float bubx, buby;
+  ifstream offsets(bubble_offsets.c_str());
+
+  if (offsets.is_open()) {
+    while (getline(offsets, line)) {
+      if (line.size() > 2) {
+        stringstream ss(line);
+
+        ss >> bubx;
+        ss >> buby;
+        Point2f bubble(bubx, buby + 3);
+        bubble_locations.push_back(bubble);
+      }
+    }
+  }
+
+  vector<Point2f>::iterator it;
+  for (it = bubble_locations.begin(); it != bubble_locations.end(); it++) {
+    bubble_val current_bubble = checkBubble(segment, *it);
+    Scalar color(0, 0, 0);
+    if (current_bubble == 1) {
+      color = (255, 255, 255);
+    }
+    rectangle(segment, (*it)-Point2f(EXAMPLE_WIDTH/2,EXAMPLE_HEIGHT/2),
+              (*it)+Point2f(EXAMPLE_WIDTH/2,EXAMPLE_HEIGHT/2), color);
+
+    retvals.push_back(current_bubble);
+  }
+
+  return retvals;
+}
+
+Mat getSegmentMat(Mat &img, Point2f &corner) {
+  Mat segment;
+  Point2f segcenter;
+  segcenter += corner;
+  segcenter.x += SEGMENT_WIDTH/2;
+  segcenter.y += SEGMENT_HEIGHT/2;
+  Size segsize(SEGMENT_WIDTH + SEGMENT_BUFFER, SEGMENT_HEIGHT + SEGMENT_BUFFER);
+  getRectSubPix(img, segsize, segcenter, segment);
+
+  #if DEBUG > 1
+  string pcorner;
+  pcorner.push_back(corner.x);
+  pcorner.append("-");
+  pcorner.push_back(corner.y);
+  imwrite("segment_" + pcorner + "_" + imgfilename, segment);
+  #endif
+
+  return segment;
+}
+
+void getSegmentLocations(vector<Point2f> &segmentcorners, string segfile) {
+  string line;
+  float segx = 0, segy = 0;
+
+  ifstream segstream(segfile.c_str());
+  if (segstream.is_open()) {
+    while (getline(segstream, line)) {
+      if (line.size() > 2) {
+        stringstream ss(line);
+
+        ss >> segx;
+        ss >> segy;
+        Point2f corner(segx, segy);
+        #if DEBUG > 1
+        cout << "adding segment corner " << corner << endl;
+        #endif
+        segmentcorners.push_back(corner);
+      }
+    }
+  }
+}
+
+void find_bounding_lines(Mat& img, int* upper, int* lower, bool vertical) {
+  int center_size = 20;
+  Mat grad_img, out;
+  Sobel(img, grad_img, 0, int(!vertical), int(vertical));
+  //multiply(grad_img, img/100, grad_img);//seems to yield improvements on bright images
+  reduce(grad_img, out, int(!vertical), CV_REDUCE_SUM, CV_32F);
+  GaussianBlur(out, out, Size(1,3), 1.0);
+
+  if( vertical )
+    transpose(out,out);
+
+  Point min_location_top;
+  Point min_location_bottom;
+  minMaxLoc(out(Range(3, out.rows/2 - center_size), Range(0,1)), NULL,NULL,&min_location_top);
+  minMaxLoc(out(Range(out.rows/2 + center_size,out.rows - 3), Range(0,1)), NULL,NULL,&min_location_bottom);
+  *upper = min_location_top.y;
+  *lower = min_location_bottom.y + out.rows/2 + center_size;
 }
 
 void straightenImage(const Mat& input_image, Mat& output_image) {
   #if DEBUG > 0
-  LOGI("BUBBLEBOT entering StraightenImage");
+  cout << "entering StraightenImage" << endl;
   #endif
   Point2f orig_corners[4];
   Point2f corners_a[4];
@@ -600,7 +799,7 @@ void straightenImage(const Mat& input_image, Mat& output_image) {
   orig_corners[3] = Point(output_image.cols,output_image.rows);
 
   #if DEBUG > 0
-  LOGI("BUBBLEBOT dilating image");
+  cout << "dilating image" << endl;
   #endif
   // Dilating reduces noise, thin lines and small marks.
   dilate(input_image, input_image_dilated, Mat(), Point(-1, -1), DILATION);
@@ -617,7 +816,7 @@ void straightenImage(const Mat& input_image, Mat& output_image) {
   Free parameter of Harris detector
   */
   #if DEBUG > 0
-  LOGI("BUBBLEBOT finding corners of the paper");
+  cout << "finding corners of the paper" << endl;
   #endif
   goodFeaturesToTrack(input_image_dilated, corners, 4, 0.01, DIST_PARAM, tmask, BLOCK_SIZE, false, 0.04);
 
@@ -627,12 +826,12 @@ void straightenImage(const Mat& input_image, Mat& output_image) {
   
   Mat H = getPerspectiveTransform(corners_a , orig_corners);
   #if DEBUG > 0
-  LOGI("BUBBLEBOT resizing and warping");
+  cout << "resizing and warping" << endl;
   #endif
   warpPerspective(input_image, output_image, H, output_image.size());
 
   #if DEBUG > 0
-  LOGI("BUBBLEBOT exiting StraightenImage");
+  cout << "exiting StraightenImage" << endl;
   #endif
 }
 
@@ -642,7 +841,7 @@ Warning: destroys the corners vector in the process.
 */
 void configCornerArray(vector<Point2f>& corners, Point2f* corners_a){
   #if DEBUG > 0
-  LOGI("BUBBLEBOT in configCornerArray");
+  cout << "in configCornerArray" << endl;
   #endif
   float min_dist;
   int min_idx;
@@ -667,84 +866,94 @@ void configCornerArray(vector<Point2f>& corners, Point2f* corners_a){
   }
 
   #if DEBUG > 0
-  LOGI("BUBBLEBOT exiting configCornerArray");
+  cout << "exiting configCornerArray" << endl;
   #endif
 }
 
-//Assuming there is a bubble at the specified location,
-//this function will tell you if it is filled, empty, or probably not a bubble.
-bubble_val checkBubble(Mat& det_img_gray, Point2f& bubble_location) {
-  #if DEBUG > 1
-  LOGI("BUBBLEBOT in checkBubble");
-  cout << "checking bubble location: " << bubble_location << endl;
-  #endif
-  Mat query_pixels;
-  getRectSubPix(det_img_gray, Point(14,18), bubble_location, query_pixels);
-  query_pixels.convertTo(query_pixels, CV_32F);
-  //normalize(query_pixels, query_pixels);
-  transpose(my_PCA.project(query_pixels.reshape(0,1)), query_pixels);
-  Mat M = (Mat_<float>(3,1) << weight_param, 1.0 - weight_param, 1.0);
-  query_pixels = comparison_vectors*query_pixels.mul(M);
-  Point max_location;
-  minMaxLoc(query_pixels, NULL, NULL, NULL, &max_location);
-  #if DEBUG > 1
-  LOGI("BUBBLEBOT exiting checkBubble");
-  #endif
-  return training_bubble_values[max_location.y];
+//Rate a location on how likely it is to be a bubble
+double rateBubble(Mat& det_img_gray, Point bubble_location) {
+    Mat query_pixels, pca_components;
+    getRectSubPix(det_img_gray, Point(EXAMPLE_WIDTH,EXAMPLE_HEIGHT), bubble_location, query_pixels);
+    query_pixels.reshape(0,1).convertTo(query_pixels, CV_32F);
+    pca_components = my_PCA.project(query_pixels);
+    //The rating is the SSD of query pixels and their back projection
+    Mat out = my_PCA.backProject(pca_components)- query_pixels;
+    return sum(out.mul(out)).val[0];
+}
+
+//Compare the bubbles with all the bubbles used in the classifier.
+bubble_val checkBubble(Mat& det_img_gray, Point bubble_location) {
+    Mat query_pixels;
+    //This bit of code finds the location in the search_window most likely to be a bubble
+    //then it checks that rather than the exact specified location.
+    Mat out = Mat::zeros(Size(search_window.y, search_window.x) , CV_32FC1);
+    Point offset = Point(bubble_location.x - search_window.x/2, bubble_location.y - search_window.y/2);
+    for(size_t i = 0; i < search_window.y; i+=1) {
+        for(size_t j = 0; j < search_window.x; j+=1) {
+            out.row(i).col(j) += rateBubble(det_img_gray, Point(j,i) + offset);
+        }
+    }
+    Point min_location;
+    minMaxLoc(out, NULL,NULL, &min_location);
+
+    getRectSubPix(det_img_gray, Point(EXAMPLE_WIDTH,EXAMPLE_HEIGHT), min_location + offset, query_pixels);
+
+    query_pixels.reshape(0,1).convertTo(query_pixels, CV_32F);
+   
+    Mat responce;
+    matchTemplate(comparison_vectors, my_PCA.project(query_pixels), responce, CV_TM_CCOEFF_NORMED);
+   
+    //Here we find the best match in our PCA training set with weighting applied.
+    reduce(responce, out, 1, CV_REDUCE_MAX);
+    int max_idx = -1;
+    float max_responce = 0;
+    for(size_t i = 0; i < training_bubble_values.size(); i+=1) {
+        float current_responce = sum(out.row(i)).val[0];
+        switch( training_bubble_values[i] ){
+            case FILLED_BUBBLE:
+                current_responce *= weight_param;
+                break;
+            case EMPTY_BUBBLE:
+                current_responce *= (1 - weight_param);
+                break;
+        }
+        if(current_responce > max_responce){
+            max_idx = i;
+            max_responce = current_responce;
+        }
+    }
+
+    return training_bubble_values[max_idx];
 }
 
 void train_PCA_classifier() {
-  #if DEBUG > 0
-  LOGI("BUBBLEBOT training PCA classifier");
-  #endif
-  //Goes though all the selected bubble locations and puts their pixels into rows of
-  //a giant matrix called so we can perform PCA on them (we need at least 3 locations to do this)
-  vector<Point2f> training_training_bubbles_locations;
-  Mat train_img, train_img_gray;
 
-  train_img = imread("training-image.jpg");
-  if (train_img.data == NULL) {
-    return;
-  }
+ // Set training_bubble_values here
+  training_bubble_values.push_back(FILLED_BUBBLE);
+  training_bubble_values.push_back(EMPTY_BUBBLE);
+  training_bubble_values.push_back(FILLED_BUBBLE);
+  training_bubble_values.push_back(FILLED_BUBBLE);
+  training_bubble_values.push_back(EMPTY_BUBBLE);
+  training_bubble_values.push_back(FILLED_BUBBLE);
+  training_bubble_values.push_back(FILLED_BUBBLE);
+  training_bubble_values.push_back(EMPTY_BUBBLE);
+  training_bubble_values.push_back(FILLED_BUBBLE);
+  training_bubble_values.push_back(FILLED_BUBBLE);
 
-  cvtColor(train_img, train_img_gray, CV_RGB2GRAY);
+  Mat example_strip = imread("example_strip.jpg");
+  Mat example_strip_bw;
+  cvtColor(example_strip, example_strip_bw, CV_RGB2GRAY);
 
-  training_bubble_values.push_back(EMPTY_BUBBLE);
-  training_bubbles_locations.push_back(Point2f(35, 28));
-  training_bubble_values.push_back(EMPTY_BUBBLE);
-  training_bubbles_locations.push_back(Point2f(99, 35));
-  training_bubble_values.push_back(FILLED_BUBBLE);
-  training_bubbles_locations.push_back(Point2f(113, 58));
-  training_bubble_values.push_back(EMPTY_BUBBLE);
-  training_bubbles_locations.push_back(Point2f(187, 11));
-  training_bubble_values.push_back(FILLED_BUBBLE);
-  training_bubbles_locations.push_back(Point2f(200, 61));
-  training_bubble_values.push_back(EMPTY_BUBBLE);
-  training_bubbles_locations.push_back(Point2f(302, 58));
-  training_bubble_values.push_back(FILLED_BUBBLE);
-  training_bubbles_locations.push_back(Point2f(276, 12));
-  training_bubble_values.push_back(EMPTY_BUBBLE);
-  training_bubbles_locations.push_back(Point2f(385, 36));
-  training_bubble_values.push_back(FILLED_BUBBLE);
-  training_bubbles_locations.push_back(Point2f(372, 107));
-  Mat PCA_set = Mat::zeros(training_bubbles_locations.size(), 18*14, CV_32F);
+  int numexamples = example_strip_bw.cols / EXAMPLE_WIDTH;
+  Mat PCA_set = Mat::zeros(numexamples, EXAMPLE_HEIGHT*EXAMPLE_WIDTH, CV_32F);
 
-  for(size_t i = 0; i < training_bubbles_locations.size(); i+=1) {
-    Mat PCA_set_row;
-    getRectSubPix(train_img_gray, Point(14,18), training_bubbles_locations[i], PCA_set_row);
+  for (int i = 0; i < numexamples; i++) {
+    Mat PCA_set_row = example_strip_bw(Rect(i * EXAMPLE_WIDTH, 0,
+                                            EXAMPLE_WIDTH, EXAMPLE_HEIGHT));
     PCA_set_row.convertTo(PCA_set_row, CV_32F);
-    normalize(PCA_set_row, PCA_set_row); //lighting invariance?
     PCA_set.row(i) += PCA_set_row.reshape(0,1);
   }
 
-  my_PCA = PCA(PCA_set, Mat(), CV_PCA_DATA_AS_ROW, 3);
+  my_PCA = PCA(PCA_set, Mat(), CV_PCA_DATA_AS_ROW, EIGENBUBBLES);
   comparison_vectors = my_PCA.project(PCA_set);
-  for(size_t i = 0; i < comparison_vectors.rows; i+=1){
-    comparison_vectors.row(i) /= norm(comparison_vectors.row(i));
-  }
-
-  #if DEBUG > 0
-  LOGI("BUBBLEBOT finished training PCA classifier");
-  #endif
 }
-

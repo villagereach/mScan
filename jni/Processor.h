@@ -20,9 +20,8 @@ public:
   void warpImage(IplImage* img, IplImage* warpImg, CvPoint * cornerPoints);
   std::vector<cv::Point> findBubbles(IplImage* pImage);
   CvPoint * findLineValues(IplImage* img);
-  void processSegment(char* filename, char* segment, int x, int y, int width, int height);
   int processImage(char* image, char* bubblelist, float weight);
-  
+
 private:
 };
 
