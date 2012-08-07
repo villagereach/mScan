@@ -53,7 +53,6 @@ public class DisplayProcessedForm extends Activity {
 		Bundle extras = getIntent().getExtras(); 
 		if (extras != null) {
 			photoName = extras.getString("photoName");
-			SharedPreferences settings = PreferenceManager.getDefaultSharedPreferences(getApplicationContext());
 			//templatePath = settings.getString(photoName, "");
 			templatePath = MScanUtils.getTemplatePath(photoName);
 			if(templatePath == ""){
@@ -67,7 +66,7 @@ public class DisplayProcessedForm extends Activity {
 			}
 				
 		}
-		
+		/*
 		String url = "file://" + MScanUtils.getFormViewHTMLDir() + "formView.html" + "?" +
 		"formLocation=" + MScanUtils.getOutputPath(photoName);
 		myWebView = (WebView) findViewById(R.id.webview2);
@@ -79,7 +78,7 @@ public class DisplayProcessedForm extends Activity {
 
 		myWebView.loadUrl(url);
 		//myWebView.addJavascriptInterface(new JavaScriptInterface(getApplicationContext(), new File(MScanUtils.getOutputPath(photoName), "transcription.txt")), "Android");
-		/*
+		
 		Intent browserIntent = new Intent(Intent.ACTION_VIEW, Uri.parse(url));
         startActivity(browserIntent);
 		
@@ -89,13 +88,14 @@ public class DisplayProcessedForm extends Activity {
                  PreferenceManager.getDefaultSharedPreferences(getApplicationContext())
                  .getString("healthCenter", "unspecifiedHC"));
 		*/
-		/*
+
 		MScanUtils.displayImageInWebView((WebView)findViewById(R.id.webview2),
 				MScanUtils.getMarkedupPhotoPath(photoName));
-		*/
+
 		 
 	}
-	public void makeAlert(final String field){
+	/*
+	private void makeAlert(final String field){
  	   AlertDialog.Builder alert = new AlertDialog.Builder(this);                 
  	   alert.setTitle("field");  
  	   alert.setMessage("field :" + field);                
@@ -125,7 +125,7 @@ public class DisplayProcessedForm extends Activity {
 	    Context mContext;
 	    BufferedWriter bufferWritter;
 	    
-	    /** Instantiate the interface and set the context */
+	    // Instantiate the interface and set the context
 	    JavaScriptInterface(Context c, File file) {
 	        mContext = c;
 	        FileWriter fileWritter;
@@ -146,11 +146,13 @@ public class DisplayProcessedForm extends Activity {
 				e.printStackTrace();
 			}
 	    }
+	    
 	    public void makePopup(String field, int field_idx) {
 	    	Log.i("mScan", "makePopup args: " + field + ' ' + field_idx);
 	    	makeAlert(field);
 
 	    }
+	    
 	    public void launchCollect(String field, int segment_idx, int field_idx) {
 	    	//It would probably be better to launch collect directly if the form has already been exported.
 	    	Log.i("mScan", "args: " + field + ' ' + segment_idx + ' ' + field_idx);
@@ -159,6 +161,7 @@ public class DisplayProcessedForm extends Activity {
 			startCollect(dataIntent);
 	    }
 	}
+	*/
 	public void startCollect(Intent data) {
 		if(data.getData() == null) {
 			//No instance specified, create or find one with new activity.
